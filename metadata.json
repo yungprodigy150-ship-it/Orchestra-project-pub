@@ -1,0 +1,6 @@
+{
+  "name": "ORCHESTRA - Multi-Agent Business Intelligence",
+  "description": "Centralized digital workforce operating system to coordinate, promote, grow and manage software ventures with specialized AI agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
