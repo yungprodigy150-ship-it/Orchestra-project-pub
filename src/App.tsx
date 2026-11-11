@@ -9,6 +9,7 @@ import { IntelligenceView } from './components/views/IntelligenceView';
 import { OpportunitiesView } from './components/views/OpportunitiesView';
 import { GrowthView } from './components/views/GrowthView';
 import { PortfolioView } from './components/views/PortfolioView';
+import { IntegrationsView } from './components/views/IntegrationsView';
 import { SettingsView } from './components/views/SettingsView';
 import { CommandPalette } from './components/common/CommandPalette';
 import { TaskDetailDrawer } from './components/common/TaskDetailDrawer';
@@ -47,6 +48,8 @@ const AppContent: React.FC = () => {
         return <GrowthView />;
       case 'portfolio':
         return <PortfolioView />;
+      case 'integrations':
+        return <IntegrationsView />;
       case 'settings':
         return <SettingsView />;
       default:

@@ -22,7 +22,8 @@ import {
   ChevronRight,
   RotateCw,
   FileText,
-  Users
+  Users,
+  Compass
 } from 'lucide-react';
 import { useOrchestra } from '../../context/OrchestraContext';
 import {
@@ -47,11 +48,22 @@ export const OpportunitiesView: React.FC = () => {
     updateRelationshipStage,
     executeOutreachPreparation,
     setIsApprovalModalOpen,
-    approvals
+    approvals,
+    discoveredLeads,
+    discoverLeads,
+    promoteLeadToCRM
   } = useOrchestra();
 
-  // Active Tab: CRM Pipeline, Strategic Opportunities, Outreach Drafter
-  const [activeTab, setActiveTab] = useState<'crm' | 'opportunities' | 'outreach_drafter'>('crm');
+  // Active Tab: CRM Pipeline, Strategic Opportunities, Discovered Leads, Outreach Drafter
+  const [activeTab, setActiveTab] = useState<'crm' | 'opportunities' | 'leads' | 'outreach_drafter'>('crm');
+
+  // Lead Discovery State
+  const [leadIndustry, setLeadIndustry] = useState('Cloud Infrastructure & Kubernetes');
+  const [leadGeography, setLeadGeography] = useState('Global');
+  const [leadKeywords, setLeadKeywords] = useState('EKS, Spot Compaction, FinOps');
+  const [leadTargetVenture, setLeadTargetVenture] = useState(ventures[0]?.id || 'v-1');
+  const [isDiscoveringLeads, setIsDiscoveringLeads] = useState(false);
+  const [leadFeedback, setLeadFeedback] = useState<string | null>(null);
 
   // Filters
   const [crmStageFilter, setCrmStageFilter] = useState<string>('all');
@@ -247,7 +259,20 @@ export const OpportunitiesView: React.FC = () => {
             }`}
           >
             <Crosshair className="w-3.5 h-3.5 text-amber-400" />
-            <span>Discovered Opportunities ({opportunities.length})</span>
+            <span>Market Signals ({opportunities.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('leads')}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+              activeTab === 'leads'
+                ? 'bg-slate-800 text-white font-bold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Discovered Leads ({discoveredLeads.length})</span>
           </button>
 
           <button
@@ -621,6 +646,193 @@ export const OpportunitiesView: React.FC = () => {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: DISCOVERED LEADS & PUBLIC ENGINE */}
+      {activeTab === 'leads' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Discovery Query Bar */}
+          <div className="p-4 bg-[#0c121d] border border-slate-800 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-emerald-400" />
+                  <span>Public Lead Discovery Engine (Scout · OPP-HUNTER)</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Discovers real target organizations via search grounding. Deduplicates by corporate domain. Zero fabricated contact details.
+                </p>
+              </div>
+
+              {leadFeedback && (
+                <div className="text-xs text-emerald-400 font-medium px-3 py-1 bg-emerald-950/60 border border-emerald-800 rounded">
+                  {leadFeedback}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs pt-1">
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Target Industry</label>
+                <input
+                  type="text"
+                  value={leadIndustry}
+                  onChange={(e) => setLeadIndustry(e.target.value)}
+                  className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs"
+                  placeholder="e.g. Cloud Infrastructure"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Geography</label>
+                <input
+                  type="text"
+                  value={leadGeography}
+                  onChange={(e) => setLeadGeography(e.target.value)}
+                  className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs"
+                  placeholder="e.g. Global, Europe, North America"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Keywords</label>
+                <input
+                  type="text"
+                  value={leadKeywords}
+                  onChange={(e) => setLeadKeywords(e.target.value)}
+                  className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs"
+                  placeholder="e.g. Kubernetes, FinOps, EKS"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Match Venture Pod</label>
+                <select
+                  value={leadTargetVenture}
+                  onChange={(e) => setLeadTargetVenture(e.target.value)}
+                  className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs"
+                >
+                  {ventures.map(v => (
+                    <option key={v.id} value={v.id}>{v.name} ({v.id})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!leadIndustry.trim()) return;
+                  setIsDiscoveringLeads(true);
+                  setLeadFeedback(null);
+                  try {
+                    const res = await discoverLeads({
+                      industry: leadIndustry,
+                      geography: leadGeography,
+                      keywords: leadKeywords.split(',').map(s => s.trim()).filter(Boolean),
+                      targetVentureId: leadTargetVenture
+                    });
+                    setLeadFeedback(`Ingested ${res.newLeads.length} new organizations (${res.duplicateCount} duplicates filtered).`);
+                  } catch (err: any) {
+                    setLeadFeedback(`Discovery error: ${err.message}`);
+                  } finally {
+                    setIsDiscoveringLeads(false);
+                  }
+                }}
+                disabled={isDiscoveringLeads}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {isDiscoveringLeads ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                <span>{isDiscoveringLeads ? 'Scout Searching Web Index...' : 'Discover Real Leads'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Leads Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {discoveredLeads.map(lead => {
+              const matchingVenture = ventures.find(v => v.id === lead.relevantProductId);
+
+              return (
+                <div
+                  key={lead.id}
+                  className="p-5 bg-[#0c121d] border border-slate-800 rounded-lg flex flex-col justify-between space-y-3 hover:border-slate-700 transition-colors"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-100">{lead.organizationName}</h4>
+                        {lead.website && (
+                          <a
+                            href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-1 mt-0.5"
+                          >
+                            <span>{lead.domain || lead.website}</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                        {lead.confidenceScore}% Match
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400">
+                      {lead.industry} · {lead.location || 'Global'}
+                    </div>
+
+                    <p className="text-xs text-slate-300 leading-relaxed mt-2.5 line-clamp-3">
+                      {lead.qualificationReason}
+                    </p>
+
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                      <span>Venture Match</span>
+                      <span className="text-indigo-300 font-semibold">{matchingVenture?.name || lead.relevantProductId}</span>
+                    </div>
+
+                    {lead.estimatedTechSpend && (
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                        <span>Estimated Spend</span>
+                        <span className="text-emerald-400 font-semibold">{lead.estimatedTechSpend}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {new Date(lead.discoveryTimestamp).toLocaleDateString()}
+                    </span>
+
+                    {lead.promotedToRelationshipId ? (
+                      <span className="px-2.5 py-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 rounded font-semibold flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        <span>In CRM ({lead.promotedToRelationshipId})</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const relId = promoteLeadToCRM(lead.id);
+                          if (relId) {
+                            setLeadFeedback(`Promoted ${lead.organizationName} to CRM pipeline (ID: ${relId}).`);
+                          }
+                        }}
+                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold flex items-center gap-1 transition-colors shadow-sm"
+                      >
+                        <span>Promote to CRM</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

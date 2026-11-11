@@ -10,7 +10,8 @@ import {
   Sliders,
   ChevronDown,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  Plug
 } from 'lucide-react';
 import { WorkspaceSection } from '../../types';
 import { useOrchestra } from '../../context/OrchestraContext';
@@ -76,6 +77,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
       id: 'portfolio',
       label: 'Portfolio',
       icon: FolderKanban
+    },
+    {
+      id: 'integrations',
+      label: 'Integrations & Tools',
+      icon: Plug
     },
     {
       id: 'settings',

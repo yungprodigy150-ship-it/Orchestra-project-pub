@@ -253,12 +253,18 @@ export class ToolExecutionService {
       let status: ToolExecutionStatus = 'SUCCESS';
       let errorMessage: string | undefined = undefined;
 
-      if (!response.ok || resData.status === 'FAILED') {
-        status = 'FAILED';
-        errorMessage = resData.error || resData.message || `Server returned HTTP ${response.status}`;
+      if (resData.status === 'BLOCKED_PERMISSION') {
+        status = 'BLOCKED_PERMISSION';
+        errorMessage = resData.error || 'Execution blocked by server security policy.';
+      } else if (resData.status === 'BLOCKED_APPROVAL') {
+        status = 'BLOCKED_APPROVAL';
+        errorMessage = resData.error || 'Execution blocked: Valid human supervisory approval required.';
       } else if (resData.status === 'NOT_CONFIGURED') {
         status = 'NOT_CONFIGURED';
         errorMessage = resData.error || resData.message || 'Underlying integration connector is not configured.';
+      } else if (!response.ok || resData.status === 'FAILED') {
+        status = 'FAILED';
+        errorMessage = resData.error || resData.message || `Server returned HTTP ${response.status}`;
       }
 
       const record: ToolExecutionRecord = {

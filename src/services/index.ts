@@ -21,3 +21,7 @@ export * from './workforce/WorkforceOrchestrator';
 export * from './commercial/CommercialAgentDefinitions';
 export * from './commercial/IntegrationRegistry';
 export * from './commercial/CommercialOrchestrator';
+export * from './tools/ToolExecutionService';
+export * from './leads/LeadDiscoveryEngine';
+export * from './approval/ExecutionApprovalEngine';
+export * from './analytics/AnalyticsIntegrationFramework';

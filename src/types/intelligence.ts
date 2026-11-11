@@ -82,7 +82,7 @@ export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  category: 'research' | 'infrastructure' | 'database' | 'graph' | 'outreach' | 'analytics';
+  category: 'research' | 'infrastructure' | 'database' | 'graph' | 'outreach' | 'analytics' | 'intel';
   inputSchema: {
     type: 'object';
     properties: Record<string, { type: string; description: string; required?: boolean }>;
@@ -95,6 +95,10 @@ export interface ToolDefinition {
   permissionLevel: ToolPermissionLevel;
   status: ToolStatus;
   statusNotice?: string;
+  timeoutMs?: number;
+  retryLimit?: number;
+  riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  requiredIntegrationId?: string;
 }
 
 export interface ExecutionSafetyGuardrails {

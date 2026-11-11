@@ -62,7 +62,11 @@ import {
   ReasonParams,
   WorkforceOrchestrator,
   CommercialOrchestrator,
-  IntegrationRegistry
+  IntegrationRegistry,
+  ToolExecutionService,
+  LeadDiscoveryEngine,
+  ExecutionApprovalEngine,
+  AnalyticsIntegrationFramework
 } from '../services';
 import {
   ProviderStatusInfo,
@@ -74,6 +78,15 @@ import {
   CoordinatedWorkflowExecution,
   LaunchWorkflowRequest
 } from '../types/workforce';
+import {
+  IntegrationConnector,
+  ToolExecutionRequest,
+  ToolExecutionRecord,
+  DiscoveredLead,
+  LeadDiscoveryQuery,
+  ExecutionAuthorizationRequest,
+  AnalyticsDataRecord
+} from '../types';
 
 interface CoreServices {
   auditLogger: AuditLogger;
@@ -87,6 +100,10 @@ interface CoreServices {
   workforceOrchestrator: WorkforceOrchestrator;
   commercialOrchestrator: CommercialOrchestrator;
   integrationRegistry: IntegrationRegistry;
+  toolExecutionService: ToolExecutionService;
+  leadDiscoveryEngine: LeadDiscoveryEngine;
+  executionApprovalEngine: ExecutionApprovalEngine;
+  analyticsIntegrationFramework: AnalyticsIntegrationFramework;
 }
 
 interface OrchestraContextType {
@@ -224,6 +241,22 @@ interface OrchestraContextType {
   executeGrowthAnalysis: (analysisScope?: string, contextNotes?: string) => Promise<{ task: Task; output: GrowthAnalysisOutput }>;
   launchCommercialWorkflow: (req: LaunchCommercialWorkflowRequest, onProgress?: (msg: string) => void) => Promise<any>;
 
+  // Stage 6: Real-World Integrations & Execution Infrastructure
+  connectors: IntegrationConnector[];
+  refreshConnectors: () => Promise<void>;
+  testIntegrationConnection: (integrationId: string) => Promise<{ success: boolean; status: string; latencyMs: number; details?: string; error?: string }>;
+  toggleIntegrationEnabled: (integrationId: string, enabled: boolean) => void;
+
+  toolExecutions: ToolExecutionRecord[];
+  executeTool: (request: ToolExecutionRequest) => Promise<ToolExecutionRecord>;
+
+  discoveredLeads: DiscoveredLead[];
+  discoverLeads: (query: LeadDiscoveryQuery) => Promise<{ newLeads: DiscoveredLead[]; duplicateCount: number }>;
+  promoteLeadToCRM: (leadId: string) => string | null;
+
+  executionAuthorizations: ExecutionAuthorizationRequest[];
+  processExecutionAuthorization: (id: string, decision: 'APPROVE' | 'REJECT', notes?: string) => Promise<void>;
+
   // Computed
   pendingApprovalsCount: number;
 }
@@ -295,6 +328,12 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       INITIAL_APPROVALS
     );
 
+    const toolExecutionService = new ToolExecutionService(toolRegistry, auditLogger);
+    workforceOrchestrator.setToolExecutionService(toolExecutionService);
+    const leadDiscoveryEngine = new LeadDiscoveryEngine(auditLogger, undefined, commercialOrchestrator);
+    const executionApprovalEngine = new ExecutionApprovalEngine(auditLogger);
+    const analyticsIntegrationFramework = new AnalyticsIntegrationFramework(auditLogger);
+
     servicesRef.current = {
       auditLogger,
       agentRegistry,
@@ -306,7 +345,11 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       toolRegistry,
       workforceOrchestrator,
       commercialOrchestrator,
-      integrationRegistry
+      integrationRegistry,
+      toolExecutionService,
+      leadDiscoveryEngine,
+      executionApprovalEngine,
+      analyticsIntegrationFramework
     };
   }
 
@@ -540,6 +583,134 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return res;
   };
 
+  // Stage 6: Real-World Integrations & Execution Infrastructure
+  const [connectors, setConnectors] = useState<IntegrationConnector[]>([]);
+  const [toolExecutions, setToolExecutions] = useState<ToolExecutionRecord[]>(() =>
+    services.toolExecutionService.listExecutions()
+  );
+  const [discoveredLeads, setDiscoveredLeads] = useState<DiscoveredLead[]>(() =>
+    services.leadDiscoveryEngine.listLeads()
+  );
+  const [executionAuthorizations, setExecutionAuthorizations] = useState<ExecutionAuthorizationRequest[]>(() =>
+    services.executionApprovalEngine.listRequests()
+  );
+
+  const refreshConnectors = async () => {
+    try {
+      const res = await fetch('/api/integrations/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.connectors)) {
+          setConnectors(data.connectors);
+        }
+      }
+    } catch {
+      // offline fallback
+    }
+  };
+
+  useEffect(() => {
+    refreshConnectors();
+  }, []);
+
+  const testIntegrationConnection = async (integrationId: string) => {
+    const res = await fetch('/api/integrations/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ integrationId })
+    });
+    const data = await res.json();
+    await refreshConnectors();
+    return data;
+  };
+
+  const toggleIntegrationEnabled = (integrationId: string, enabled: boolean) => {
+    setConnectors(prev =>
+      prev.map(c => (c.id === integrationId ? { ...c, isEnabled: enabled } : c))
+    );
+  };
+
+  const executeTool = async (request: ToolExecutionRequest) => {
+    const result = await services.toolExecutionService.executeTool(request);
+    setToolExecutions(services.toolExecutionService.listExecutions());
+    syncFromServices();
+    return result;
+  };
+
+  const discoverLeads = async (query: LeadDiscoveryQuery) => {
+    const res = await services.leadDiscoveryEngine.discoverLeads(query);
+    setDiscoveredLeads(services.leadDiscoveryEngine.listLeads());
+    syncFromServices();
+    return res;
+  };
+
+  const promoteLeadToCRM = (leadId: string) => {
+    const relId = services.leadDiscoveryEngine.promoteLeadToCRM(leadId);
+    setRelationships(services.commercialOrchestrator.listRelationships());
+    setDiscoveredLeads(services.leadDiscoveryEngine.listLeads());
+    syncFromServices();
+    return relId;
+  };
+
+  const processExecutionAuthorization = async (
+    id: string,
+    decision: 'APPROVE' | 'REJECT',
+    notes?: string
+  ) => {
+    // 1. Process decision in local execution approval engine
+    const updated = services.executionApprovalEngine.processDecision(id, decision, 'Supervisory Human Operator', notes);
+
+    // 2. Synchronize decision to server approval store
+    try {
+      await fetch('/api/approvals/decide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          decision,
+          decisionBy: 'Supervisory Human Operator',
+          notes
+        })
+      });
+    } catch {
+      // offline/fallback
+    }
+
+    // 3. If approved and involves email dispatch, execute via ToolExecutionService
+    if (decision === 'APPROVE' && updated.actionType === 'SEND_EMAIL') {
+      try {
+        const payload = (updated.proposedActionPayload || {}) as any;
+        const execRes = await services.toolExecutionService.executeTool({
+          toolId: 'tool_email_dispatch',
+          parameters: {
+            to: payload.recipient || payload.to || '',
+            subject: payload.subject || '',
+            body: payload.body || '',
+            approvalId: id
+          },
+          requestingAgentId: updated.requestingAgentId,
+          requestingAgentName: updated.requestingAgentName,
+          isHumanSupervisor: true,
+          approvalId: id,
+          taskId: updated.relatedTaskId
+        });
+
+        services.executionApprovalEngine.recordExecutionResult(id, {
+          success: execRes.status === 'SUCCESS' || execRes.status === 'NOT_CONFIGURED',
+          responseSummary: execRes.status === 'SUCCESS' ? 'Dispatched via Resend API' : (execRes.errorMessage || 'Held safely: HELD_NO_INTEGRATION'),
+          errorCode: execRes.status === 'FAILED' ? 'DISPATCH_ERROR' : undefined
+        });
+
+        setToolExecutions(services.toolExecutionService.listExecutions());
+      } catch (err: any) {
+        console.warn('[Approval Engine] Execution post-step note:', err);
+      }
+    }
+
+    setExecutionAuthorizations(services.executionApprovalEngine.listRequests());
+    syncFromServices();
+  };
+
   // Subscribe to audit logger to keep UI event stream reactive
   useEffect(() => {
     const unsubscribe = services.auditLogger.subscribe((newEvent) => {
@@ -558,6 +729,9 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const currentCamps = services.commercialOrchestrator.listCampaigns();
     const currentApps = services.commercialOrchestrator.listApprovals();
     const currentConns = services.integrationRegistry.listConnectors();
+    const currentExecs = services.toolExecutionService.listExecutions();
+    const currentLeads = services.leadDiscoveryEngine.listLeads();
+    const currentAuths = services.executionApprovalEngine.listRequests();
 
     setTasks([...currentTasks]);
     setAgents([...currentAgents]);
@@ -567,6 +741,9 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCommercialCampaigns([...currentCamps]);
     setApprovals([...currentApps]);
     setCommercialIntegrations([...currentConns]);
+    setToolExecutions([...currentExecs]);
+    setDiscoveredLeads([...currentLeads]);
+    setExecutionAuthorizations([...currentAuths]);
 
     // Keep active drawers in sync with current data
     if (activeTaskForDrawer) {
@@ -837,8 +1014,9 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const pendingApprovalsCount = useMemo(() => {
     const taskApprovals = tasks.filter(t => t.status === 'WAITING_FOR_APPROVAL' || t.approvalStatus === 'pending').length;
     const commercialApprovals = approvals.filter(a => a.decision === 'PENDING').length;
-    return taskApprovals + commercialApprovals;
-  }, [tasks, approvals]);
+    const executionApprovals = executionAuthorizations.filter(a => a.status === 'PENDING').length;
+    return taskApprovals + commercialApprovals + executionApprovals;
+  }, [tasks, approvals, executionAuthorizations]);
 
   const value: OrchestraContextType = {
     activeSection,
@@ -955,6 +1133,22 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     executeOutreachPreparation,
     executeGrowthAnalysis,
     launchCommercialWorkflow,
+
+    // Stage 6: Real-World Integrations & Execution Infrastructure
+    connectors,
+    refreshConnectors,
+    testIntegrationConnection,
+    toggleIntegrationEnabled,
+
+    toolExecutions,
+    executeTool,
+
+    discoveredLeads,
+    discoverLeads,
+    promoteLeadToCRM,
+
+    executionAuthorizations,
+    processExecutionAuthorization,
 
     pendingApprovalsCount
   };

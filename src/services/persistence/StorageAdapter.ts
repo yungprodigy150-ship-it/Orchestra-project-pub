@@ -1,8 +1,8 @@
 /**
  * ORCHESTRA Persistence Abstraction Layer
- * Provides a clean, decoupled data storage interface.
- * Implements a resilient local storage adapter with in-memory fallback,
- * allowing future stages to plug in CloudSQL, Firestore, or PostgreSQL without modifying business logic.
+ * Provides a resilient, decoupled data storage interface.
+ * Implements a hybrid persistence adapter that provides synchronous in-memory and localStorage
+ * caching paired with asynchronous server-authoritative disk sync (/api/persistence/*).
  */
 
 export interface IPersistenceStorage<T extends { id: string }> {
@@ -19,12 +19,13 @@ export class LocalStoragePersistenceAdapter<T extends { id: string }> implements
   private key: string;
   private memoryCache: Map<string, T> = new Map();
   private isBrowser: boolean;
+  private syncTimeout: any = null;
 
   constructor(storageKey: string, initialData?: T[]) {
     this.key = `orchestra_${storageKey}`;
     this.isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
-    // Hydrate from localStorage or initialize with seed data
+    // 1. Hydrate from localStorage or initialize with seed data
     if (this.isBrowser) {
       try {
         const raw = window.localStorage.getItem(this.key);
@@ -44,16 +45,63 @@ export class LocalStoragePersistenceAdapter<T extends { id: string }> implements
       initialData.forEach((item) => this.memoryCache.set(item.id, item));
       this.persist();
     }
+
+    // 2. Asynchronously sync with server disk persistence
+    if (this.isBrowser) {
+      this.syncWithServer(storageKey);
+    }
+  }
+
+  private async syncWithServer(collection: string) {
+    try {
+      const res = await fetch(`/api/persistence/${collection}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.items) && data.items.length > 0) {
+          data.items.forEach((item: T) => {
+            if (item && item.id && !this.memoryCache.has(item.id)) {
+              this.memoryCache.set(item.id, item);
+            }
+          });
+          // Update localStorage
+          const all = Array.from(this.memoryCache.values());
+          window.localStorage.setItem(this.key, JSON.stringify(all));
+        }
+      }
+    } catch {
+      // Offline or network unreachable - rely on localStorage
+    }
   }
 
   private persist(): void {
     if (!this.isBrowser) return;
+
+    const items = Array.from(this.memoryCache.values());
+
+    // Write to client localStorage
     try {
-      const items = Array.from(this.memoryCache.values());
       window.localStorage.setItem(this.key, JSON.stringify(items));
     } catch (e) {
       console.warn(`[StorageAdapter] Failed to write to localStorage for key ${this.key}`, e);
     }
+
+    // Debounced sync to server disk persistence
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout);
+    }
+
+    this.syncTimeout = setTimeout(async () => {
+      try {
+        const rawCollection = this.key.replace(/^orchestra_/, '');
+        await fetch(`/api/persistence/${rawCollection}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items })
+        });
+      } catch {
+        // Silent server sync failover
+      }
+    }, 400);
   }
 
   public get(id: string): T | null {

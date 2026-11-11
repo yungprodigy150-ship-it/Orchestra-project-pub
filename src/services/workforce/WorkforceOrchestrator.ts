@@ -43,6 +43,7 @@ export class WorkforceOrchestrator {
   private auditLogger: AuditLogger;
   private workflowStorage: IPersistenceStorage<CoordinatedWorkflowExecution>;
   private ventures: Venture[] = [];
+  private toolExecutionService?: any;
 
   constructor(
     intelligenceService: IntelligenceService,
@@ -60,6 +61,10 @@ export class WorkforceOrchestrator {
     this.workflowStorage =
       workflowStorage ||
       new LocalStoragePersistenceAdapter<CoordinatedWorkflowExecution>('coordinated_workflows', []);
+  }
+
+  public setToolExecutionService(toolExecutionService: any) {
+    this.toolExecutionService = toolExecutionService;
   }
 
   public setVentures(ventures: Venture[]) {
@@ -109,8 +114,40 @@ export class WorkforceOrchestrator {
     // Select appropriate schema based on agent role
     const schema = this.getSchemaForAgent(agent);
 
-    // Build context prompt
-    const prompt = this.buildPromptForAgent(agent, objective, contextNotes);
+    // Live tool execution integration for authorized research and discovery agents
+    let enrichedNotes = contextNotes || '';
+    if (this.toolExecutionService) {
+      try {
+        if (agent.id === 'agt-scout' || agent.id === 'agt-opp-hunter') {
+          const leadToolRes = await this.toolExecutionService.executeTool({
+            toolId: 'tool_lead_discovery',
+            parameters: { industry: objective.slice(0, 45), targetVentureId: ventureId },
+            requestingAgentId: agent.id,
+            requestingAgentName: agent.name,
+            taskId: task.id
+          });
+          if (leadToolRes?.outputData) {
+            enrichedNotes += `\n[Live Discovered Leads Context]: ${JSON.stringify(leadToolRes.outputData.leads?.slice(0, 3) || [])}`;
+          }
+        } else if (agent.id === 'agt-2' || agent.id === 'agt-mkt-intel') {
+          const researchRes = await this.toolExecutionService.executeTool({
+            toolId: 'tool_web_research',
+            parameters: { query: objective.slice(0, 80) },
+            requestingAgentId: agent.id,
+            requestingAgentName: agent.name,
+            taskId: task.id
+          });
+          if (researchRes?.outputData?.citationSummary) {
+            enrichedNotes += `\n[Live Search Grounding Findings]: ${researchRes.outputData.citationSummary}`;
+          }
+        }
+      } catch (toolErr) {
+        console.warn(`[WorkforceOrchestrator] Tool execution pre-step notice:`, toolErr);
+      }
+    }
+
+    // Build context prompt with live findings
+    const prompt = this.buildPromptForAgent(agent, objective, enrichedNotes);
 
     try {
       const response = await this.intelligenceService.reason({

@@ -25,12 +25,138 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       type: 'object',
       properties: {
         results: { type: 'array', description: 'Verified snippets with title, URL, and publication timestamp' },
-        citationSummary: { type: 'string', description: 'Consolidated factual synthesis' }
+        citationSummary: { type: 'string', description: 'Consolidated factual synthesis' },
+        retrievedFacts: { type: 'array', description: 'Direct facts verified from search sources' },
+        aiInterpretations: { type: 'array', description: 'Analytical inferences and hypotheses' }
       }
     },
     permissionLevel: 'PUBLIC',
-    status: 'SIMULATED',
-    statusNotice: 'Operating via deterministic sandbox synthesizer. Real SERP connector awaits production API key.'
+    riskLevel: 'LOW',
+    timeoutMs: 18000,
+    retryLimit: 2,
+    requiredIntegrationId: 'conn-web-search',
+    status: 'READY',
+    statusNotice: 'Google Search grounding active via Gemini API Gateway. Returns real sources.'
+  },
+  {
+    id: 'tool_website_intelligence',
+    name: 'Website & Business DOM Extractor',
+    description: 'Retrieves public HTML, title, meta description, services, pricing indicators, and public contact channels from company URLs.',
+    category: 'intel',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Target website URL (e.g. https://company.com)', required: true }
+      },
+      required: ['url']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        resolvedTitle: { type: 'string', description: 'Resolved page HTML title' },
+        metaDescription: { type: 'string', description: 'Meta description tag content' },
+        primaryServices: { type: 'array', description: 'Extracted primary service offerings' },
+        publicContactChannels: { type: 'object', description: 'Detected email and contact links' },
+        publicPricingCues: { type: 'array', description: 'Detected pricing plans and tier keywords' }
+      }
+    },
+    permissionLevel: 'PUBLIC',
+    riskLevel: 'LOW',
+    timeoutMs: 12000,
+    retryLimit: 1,
+    requiredIntegrationId: 'conn-website-intel',
+    status: 'READY',
+    statusNotice: 'Built-in public DOM retrieval engine operational.'
+  },
+  {
+    id: 'tool_lead_discovery',
+    name: 'Public Organization & Lead Discovery Engine',
+    description: 'Discovers real target organizations and businesses based on industry, geography, keywords, and venture relevance.',
+    category: 'research',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        industry: { type: 'string', description: 'Target industry or sector', required: true },
+        geography: { type: 'string', description: 'Target region or country' },
+        keywords: { type: 'array', description: 'Key technology or operational terms' },
+        targetVentureId: { type: 'string', description: 'ORCHESTRA portfolio product ID (v-1, v-2, v-3)' }
+      },
+      required: ['industry']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        leads: { type: 'array', description: 'List of discovered organizations with confidence scores' },
+        count: { type: 'number', description: 'Number of verified leads discovered' }
+      }
+    },
+    permissionLevel: 'PUBLIC',
+    riskLevel: 'MEDIUM',
+    timeoutMs: 25000,
+    retryLimit: 2,
+    requiredIntegrationId: 'conn-web-search',
+    status: 'READY',
+    statusNotice: 'Searches public organizational registries and index. Deduplicates by corporate domain.'
+  },
+  {
+    id: 'tool_email_dispatch',
+    name: 'Transactional & Outreach Email Dispatcher',
+    description: 'Sends human-approved outreach emails via Resend. Strictly blocked without prior supervisory authorization.',
+    category: 'outreach',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'Recipient corporate email address', required: true },
+        subject: { type: 'string', description: 'Email subject line', required: true },
+        body: { type: 'string', description: 'Approved email body text', required: true },
+        approvalId: { type: 'string', description: 'Reference ID of approved human authorization record' }
+      },
+      required: ['to', 'subject', 'body']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        dispatched: { type: 'boolean', description: 'Whether the email was dispatched' },
+        messageId: { type: 'string', description: 'Provider delivery ID' },
+        heldReason: { type: 'string', description: 'Reason if held (e.g. HELD_NO_INTEGRATION)' }
+      }
+    },
+    permissionLevel: 'HUMAN_APPROVAL_REQUIRED',
+    riskLevel: 'HIGH',
+    timeoutMs: 10000,
+    retryLimit: 0,
+    requiredIntegrationId: 'conn-email-resend',
+    status: 'UNCONFIGURED',
+    statusNotice: 'RESEND_API_KEY unconfigured. Approved emails safely transition to HELD_NO_INTEGRATION without leaking.'
+  },
+  {
+    id: 'tool_analytics_query',
+    name: 'Unified Telemetry & Analytics Query Engine',
+    description: 'Retrieves actual measured pageviews, funnel events, and conversion metrics from PostHog or Google Ads.',
+    category: 'analytics',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        metricType: { type: 'string', description: 'PAGEVIEWS | ACTIVE_USERS | CONVERSIONS | SPEND | REVENUE' },
+        ventureId: { type: 'string', description: 'ORCHESTRA portfolio venture ID (v-1, v-2, v-3)' },
+        dateRange: { type: 'string', description: 'Lookback window (e.g. 7d, 30d)' }
+      },
+      required: ['ventureId']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        isMeasuredData: { type: 'boolean', description: 'Guarantees whether data represents real measurements or empty state' },
+        records: { type: 'array', description: 'Historical data points' }
+      }
+    },
+    permissionLevel: 'PUBLIC',
+    riskLevel: 'LOW',
+    timeoutMs: 8000,
+    retryLimit: 1,
+    requiredIntegrationId: 'conn-analytics-posthog',
+    status: 'UNCONFIGURED',
+    statusNotice: 'POSTHOG_API_KEY unconfigured. Returns transparent zero-state without fabricated statistics.'
   },
   {
     id: 'tool_doc_schema_analyzer',
@@ -53,6 +179,9 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       }
     },
     permissionLevel: 'PUBLIC',
+    riskLevel: 'LOW',
+    timeoutMs: 8000,
+    retryLimit: 1,
     status: 'READY'
   },
   {
@@ -76,8 +205,11 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       }
     },
     permissionLevel: 'HUMAN_APPROVAL_REQUIRED',
-    status: 'SIMULATED',
-    statusNotice: 'Read-only cluster probe active. Live AWS IAM assume-role credentials configured per venture.'
+    riskLevel: 'MEDIUM',
+    timeoutMs: 15000,
+    retryLimit: 1,
+    status: 'READY',
+    statusNotice: 'Read-only cluster probe active. Live telemetry evaluated against venture heuristics.'
   },
   {
     id: 'tool_crm_account_profiler',
@@ -100,8 +232,12 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       }
     },
     permissionLevel: 'HUMAN_APPROVAL_REQUIRED',
-    status: 'SIMULATED',
-    statusNotice: 'Requires human signoff before any personalized draft or outreach trigger.'
+    riskLevel: 'LOW',
+    timeoutMs: 12000,
+    retryLimit: 1,
+    requiredIntegrationId: 'conn-crm-hubspot',
+    status: 'UNCONFIGURED',
+    statusNotice: 'HUBSPOT_API_KEY unconfigured in environment secrets. Profile enrichment held until configured.'
   },
   {
     id: 'tool_database_cdc_inspector',
@@ -124,12 +260,15 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       }
     },
     permissionLevel: 'PUBLIC',
+    riskLevel: 'LOW',
+    timeoutMs: 8000,
+    retryLimit: 2,
     status: 'READY'
   },
   {
     id: 'tool_external_billing_api',
     name: 'External Commercial Billing & Invoicing Engine',
-    description: 'Issues customer subscription licenses, updates contract milestones, and generates enterprise invoices.',
+    description: 'Issues customer subscription licenses, updates contract milestones, and generates enterprise invoices via Stripe.',
     category: 'analytics',
     inputSchema: {
       type: 'object',
@@ -147,8 +286,12 @@ export const INITIAL_TOOLS: ToolDefinition[] = [
       }
     },
     permissionLevel: 'RESTRICTED_ADMIN',
+    riskLevel: 'CRITICAL',
+    timeoutMs: 15000,
+    retryLimit: 0,
+    requiredIntegrationId: 'conn-billing-stripe',
     status: 'UNCONFIGURED',
-    statusNotice: 'Stripe / Merchant Gateway unconfigured. Production financial operations disabled.'
+    statusNotice: 'Stripe Secret Key unconfigured in environment secrets. Production financial operations disabled.'
   }
 ];
 
