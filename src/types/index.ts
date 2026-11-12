@@ -305,3 +305,8 @@ export interface SystemEvent {
 }
 
 export * from './integrations';
+export * from './identity';
+export * from './browser';
+export * from './accounts';
+export * from './discovery';
+export * from './dialogue';

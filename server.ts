@@ -20,6 +20,10 @@ import fsPromises from 'fs/promises';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import { browserRouter } from './src/server/browserEngine.js';
+import { accountRouter } from './src/server/accountEngine.js';
+import { discoveryRouter } from './src/server/discoveryEngine.js';
+import { dialogueRouter } from './src/server/dialogueEngine.js';
 
 dotenv.config();
 
@@ -1572,6 +1576,12 @@ Return a clean JSON array:
     });
   }
 });
+
+// Autonomous Internet Workforce Endpoints
+app.use('/api/browser', requireAuth, browserRouter);
+app.use('/api/accounts', requireAuth, accountRouter);
+app.use('/api/ai/discovery', requireAuth, discoveryRouter);
+app.use('/api/dialogue', requireAuth, dialogueRouter);
 
 // Catch-all for undefined API routes to prevent falling through to Vite HTML
 app.all('/api/*', (_req: Request, res: Response) => {

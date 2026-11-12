@@ -17,6 +17,7 @@ import { AgentDetailDrawer } from './components/common/AgentDetailDrawer';
 import { EditAgentModal } from './components/common/EditAgentModal';
 import { WorkflowExecutionModal } from './components/common/WorkflowExecutionModal';
 import { ApprovalQueueModal } from './components/common/ApprovalQueueModal';
+import { CompactAgentDialogue } from './components/common/CompactAgentDialogue';
 
 const AppContent: React.FC = () => {
   const {
@@ -94,6 +95,7 @@ const AppContent: React.FC = () => {
         isOpen={isApprovalModalOpen}
         onClose={() => setIsApprovalModalOpen(false)}
       />
+      <CompactAgentDialogue />
     </div>
   );
 };

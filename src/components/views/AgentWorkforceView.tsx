@@ -21,11 +21,13 @@ import {
   Mail,
   Users,
   BarChart3,
-  Send
+  Send,
+  Globe
 } from 'lucide-react';
 import { useOrchestra } from '../../context/OrchestraContext';
 import { Agent, AgentDepartment, AgentAutonomy } from '../../types';
 import { Modal } from '../common/Modal';
+import { InternetWorkforceSubView } from './workforce/InternetWorkforceSubView';
 
 export const AgentWorkforceView: React.FC = () => {
   const {
@@ -44,6 +46,7 @@ export const AgentWorkforceView: React.FC = () => {
     setActiveSection
   } = useOrchestra();
 
+  const [activeWorkforceTab, setActiveWorkforceTab] = useState<'roster' | 'internet_workforce'>('roster');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -135,7 +138,46 @@ export const AgentWorkforceView: React.FC = () => {
         </div>
       </div>
 
-      {/* Stage 5: Commercial Operations & Growth Workforce Highlight */}
+      {/* Primary Workforce View Mode Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-1">
+        <button
+          type="button"
+          onClick={() => setActiveWorkforceTab('roster')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 border ${
+            activeWorkforceTab === 'roster'
+              ? 'bg-slate-800 text-white border-slate-700 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-900/60'
+          }`}
+        >
+          <Bot className="w-4 h-4 text-indigo-400" />
+          <span>Workforce Roster & Stages</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-900 text-slate-300 border border-slate-700">
+            {agents.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveWorkforceTab('internet_workforce')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 border ${
+            activeWorkforceTab === 'internet_workforce'
+              ? 'bg-gradient-to-r from-amber-950/60 to-slate-800 text-amber-300 border-amber-600/50 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-900/60'
+          }`}
+        >
+          <Globe className="w-4 h-4 text-cyan-400" />
+          <span>Autonomous Internet Workforce</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-950/80 text-amber-300 border border-amber-700">
+            Identities & Browser
+          </span>
+        </button>
+      </div>
+
+      {activeWorkforceTab === 'internet_workforce' ? (
+        <InternetWorkforceSubView />
+      ) : (
+        <>
+          {/* Stage 5: Commercial Operations & Growth Workforce Highlight */}
       <div className="p-4 bg-gradient-to-r from-[#0d121c] via-[#101726] to-[#0c121e] border border-cyan-900/60 rounded-xl space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -616,6 +658,8 @@ export const AgentWorkforceView: React.FC = () => {
           );
         })}
       </div>
+        </>
+      )}
 
       {/* Registration Modal */}
       <Modal

@@ -85,8 +85,26 @@ import {
   DiscoveredLead,
   LeadDiscoveryQuery,
   ExecutionAuthorizationRequest,
-  AnalyticsDataRecord
+  AnalyticsDataRecord,
+  AgentDigitalIdentity,
+  AgentAutonomyPermissionLevel,
+  BrowserSessionRecord,
+  BrowserTabState,
+  ExternalConnectedAccount,
+  AccountActivityRecord,
+  DiscoveredAIModel,
+  ModelRoutingEvaluation,
+  AgentConversation,
+  DialogueMessage,
+  DialogueMessageType
 } from '../types';
+import {
+  AgentIdentityService,
+  AutonomousBrowserService,
+  ExternalAccountService,
+  AIDiscoveryService,
+  AgentDialogueService
+} from '../services';
 
 interface CoreServices {
   auditLogger: AuditLogger;
@@ -104,6 +122,11 @@ interface CoreServices {
   leadDiscoveryEngine: LeadDiscoveryEngine;
   executionApprovalEngine: ExecutionApprovalEngine;
   analyticsIntegrationFramework: AnalyticsIntegrationFramework;
+  identityService: AgentIdentityService;
+  browserService: AutonomousBrowserService;
+  accountService: ExternalAccountService;
+  aiDiscoveryService: AIDiscoveryService;
+  dialogueService: AgentDialogueService;
 }
 
 interface OrchestraContextType {
@@ -257,6 +280,34 @@ interface OrchestraContextType {
   executionAuthorizations: ExecutionAuthorizationRequest[];
   processExecutionAuthorization: (id: string, decision: 'APPROVE' | 'REJECT', notes?: string) => Promise<void>;
 
+  // Autonomous Internet Workforce Infrastructure
+  digitalIdentities: AgentDigitalIdentity[];
+  updateAgentPermissionLevel: (agentId: string, level: AgentAutonomyPermissionLevel) => void;
+  getAgentIdentity: (agentId: string) => AgentDigitalIdentity | null;
+
+  browserSessions: BrowserSessionRecord[];
+  createBrowserSession: (agentId: string, agentName: string, objective: string, relatedTaskId?: string) => Promise<BrowserSessionRecord>;
+  openBrowserTab: (sessionId: string, url: string, agentId?: string) => Promise<BrowserTabState | null>;
+  navigateBrowserTab: (sessionId: string, tabId: string, url: string, agentId?: string) => Promise<BrowserTabState | null>;
+  performBrowserAction: (sessionId: string, tabId: string, action: 'click_link' | 'extract_content' | 'download_file', linkHref?: string, agentId?: string) => Promise<any>;
+  closeBrowserTab: (sessionId: string, tabId: string) => void;
+
+  externalAccounts: ExternalConnectedAccount[];
+  refreshExternalAccounts: () => Promise<void>;
+  testAccountConnection: (accountId: string) => Promise<{ success: boolean; status: string; details?: string; error?: string }>;
+  accountActivities: AccountActivityRecord[];
+  recordAccountActivity: (activity: Omit<AccountActivityRecord, 'id' | 'timestamp'>) => AccountActivityRecord;
+
+  discoveredModels: DiscoveredAIModel[];
+  refreshDiscoveredModels: () => Promise<void>;
+  evaluateModelRouting: (taskObjective: string, options?: { maxLatencyMs?: number; maxBudgetUsd?: number; requireCoding?: boolean }) => Promise<ModelRoutingEvaluation>;
+
+  agentConversations: AgentConversation[];
+  startAgentDialogue: (initiatingAgent: any, targetAgent: any, topic: string, initialPrompt: string, relatedTaskId?: string) => Promise<AgentConversation>;
+  sendAgentDialogueMessage: (conversationId: string, senderAgent: any, recipientAgent: any, content: string, messageType?: DialogueMessageType) => Promise<DialogueMessage | null>;
+  isDialogueModalOpen: boolean;
+  setIsDialogueModalOpen: (open: boolean) => void;
+
   // Computed
   pendingApprovalsCount: number;
 }
@@ -334,6 +385,12 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const executionApprovalEngine = new ExecutionApprovalEngine(auditLogger);
     const analyticsIntegrationFramework = new AnalyticsIntegrationFramework(auditLogger);
 
+    const identityService = new AgentIdentityService(auditLogger);
+    const browserService = new AutonomousBrowserService(auditLogger);
+    const accountService = new ExternalAccountService(auditLogger);
+    const aiDiscoveryService = new AIDiscoveryService(auditLogger);
+    const dialogueService = new AgentDialogueService(auditLogger);
+
     servicesRef.current = {
       auditLogger,
       agentRegistry,
@@ -349,7 +406,12 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       toolExecutionService,
       leadDiscoveryEngine,
       executionApprovalEngine,
-      analyticsIntegrationFramework
+      analyticsIntegrationFramework,
+      identityService,
+      browserService,
+      accountService,
+      aiDiscoveryService,
+      dialogueService
     };
   }
 
@@ -711,6 +773,125 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     syncFromServices();
   };
 
+  // Autonomous Internet Workforce Infrastructure State & Handlers
+  const [digitalIdentities, setDigitalIdentities] = useState<AgentDigitalIdentity[]>(() =>
+    services.identityService.listIdentities()
+  );
+  const [browserSessions, setBrowserSessions] = useState<BrowserSessionRecord[]>(() =>
+    services.browserService.listSessions()
+  );
+  const [externalAccounts, setExternalAccounts] = useState<ExternalConnectedAccount[]>(() =>
+    services.accountService.listAccounts()
+  );
+  const [accountActivities, setAccountActivities] = useState<AccountActivityRecord[]>(() =>
+    services.accountService.listActivities()
+  );
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredAIModel[]>(() =>
+    services.aiDiscoveryService.listModels()
+  );
+  const [agentConversations, setAgentConversations] = useState<AgentConversation[]>(() =>
+    services.dialogueService.listConversations()
+  );
+  const [isDialogueModalOpen, setIsDialogueModalOpen] = useState(false);
+
+  const refreshExternalAccounts = async () => {
+    try {
+      const accs = await services.accountService.fetchAccounts();
+      setExternalAccounts([...accs]);
+    } catch {
+      // fallback
+    }
+  };
+
+  const refreshDiscoveredModels = async () => {
+    try {
+      const mods = await services.aiDiscoveryService.fetchCatalog();
+      setDiscoveredModels([...mods]);
+    } catch {
+      // fallback
+    }
+  };
+
+  useEffect(() => {
+    refreshExternalAccounts();
+    refreshDiscoveredModels();
+  }, []);
+
+  const updateAgentPermissionLevel = (agentId: string, level: AgentAutonomyPermissionLevel) => {
+    services.identityService.updatePermissionLevel(agentId, level);
+    setDigitalIdentities(services.identityService.listIdentities());
+    syncFromServices();
+  };
+
+  const getAgentIdentity = (agentId: string) => {
+    return services.identityService.getIdentity(agentId);
+  };
+
+  const createBrowserSession = async (agentId: string, agentName: string, objective: string, relatedTaskId?: string) => {
+    const session = await services.browserService.createSession(agentId, agentName, objective, relatedTaskId);
+    setBrowserSessions(services.browserService.listSessions());
+    syncFromServices();
+    return session;
+  };
+
+  const openBrowserTab = async (sessionId: string, url: string, agentId?: string) => {
+    const tab = await services.browserService.openTab(sessionId, url, agentId);
+    setBrowserSessions(services.browserService.listSessions());
+    syncFromServices();
+    return tab;
+  };
+
+  const navigateBrowserTab = async (sessionId: string, tabId: string, url: string, agentId?: string) => {
+    const tab = await services.browserService.navigate(sessionId, tabId, url, agentId);
+    setBrowserSessions(services.browserService.listSessions());
+    syncFromServices();
+    return tab;
+  };
+
+  const performBrowserAction = async (sessionId: string, tabId: string, action: 'click_link' | 'extract_content' | 'download_file', linkHref?: string, agentId?: string) => {
+    const res = await services.browserService.performAction(sessionId, tabId, action, linkHref, agentId);
+    setBrowserSessions(services.browserService.listSessions());
+    syncFromServices();
+    return res;
+  };
+
+  const closeBrowserTab = (sessionId: string, tabId: string) => {
+    services.browserService.closeTab(sessionId, tabId);
+    setBrowserSessions(services.browserService.listSessions());
+    syncFromServices();
+  };
+
+  const testAccountConnection = async (accountId: string) => {
+    const res = await services.accountService.testConnection(accountId);
+    await refreshExternalAccounts();
+    return res;
+  };
+
+  const recordAccountActivity = (activity: Omit<AccountActivityRecord, 'id' | 'timestamp'>) => {
+    const res = services.accountService.recordActivity(activity);
+    setAccountActivities(services.accountService.listActivities());
+    syncFromServices();
+    return res;
+  };
+
+  const evaluateModelRouting = async (taskObjective: string, options?: { maxLatencyMs?: number; maxBudgetUsd?: number; requireCoding?: boolean }) => {
+    return services.aiDiscoveryService.evaluateRouting(taskObjective, options);
+  };
+
+  const startAgentDialogue = async (initiatingAgent: any, targetAgent: any, topic: string, initialPrompt: string, relatedTaskId?: string) => {
+    const conv = await services.dialogueService.startConversation(initiatingAgent, targetAgent, topic, initialPrompt, relatedTaskId);
+    setAgentConversations(services.dialogueService.listConversations());
+    syncFromServices();
+    return conv;
+  };
+
+  const sendAgentDialogueMessage = async (conversationId: string, senderAgent: any, recipientAgent: any, content: string, messageType?: DialogueMessageType) => {
+    const msg = await services.dialogueService.sendMessage(conversationId, senderAgent, recipientAgent, content, messageType);
+    setAgentConversations(services.dialogueService.listConversations());
+    syncFromServices();
+    return msg;
+  };
+
   // Subscribe to audit logger to keep UI event stream reactive
   useEffect(() => {
     const unsubscribe = services.auditLogger.subscribe((newEvent) => {
@@ -744,6 +925,12 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setToolExecutions([...currentExecs]);
     setDiscoveredLeads([...currentLeads]);
     setExecutionAuthorizations([...currentAuths]);
+    setDigitalIdentities(services.identityService.listIdentities());
+    setBrowserSessions(services.browserService.listSessions());
+    setExternalAccounts(services.accountService.listAccounts());
+    setAccountActivities(services.accountService.listActivities());
+    setDiscoveredModels(services.aiDiscoveryService.listModels());
+    setAgentConversations(services.dialogueService.listConversations());
 
     // Keep active drawers in sync with current data
     if (activeTaskForDrawer) {
@@ -1149,6 +1336,34 @@ export const OrchestraProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     executionAuthorizations,
     processExecutionAuthorization,
+
+    // Autonomous Internet Workforce Infrastructure
+    digitalIdentities,
+    updateAgentPermissionLevel,
+    getAgentIdentity,
+
+    browserSessions,
+    createBrowserSession,
+    openBrowserTab,
+    navigateBrowserTab,
+    performBrowserAction,
+    closeBrowserTab,
+
+    externalAccounts,
+    refreshExternalAccounts,
+    testAccountConnection,
+    accountActivities,
+    recordAccountActivity,
+
+    discoveredModels,
+    refreshDiscoveredModels,
+    evaluateModelRouting,
+
+    agentConversations,
+    startAgentDialogue,
+    sendAgentDialogueMessage,
+    isDialogueModalOpen,
+    setIsDialogueModalOpen,
 
     pendingApprovalsCount
   };

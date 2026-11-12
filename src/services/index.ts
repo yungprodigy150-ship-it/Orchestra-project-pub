@@ -25,3 +25,8 @@ export * from './tools/ToolExecutionService';
 export * from './leads/LeadDiscoveryEngine';
 export * from './approval/ExecutionApprovalEngine';
 export * from './analytics/AnalyticsIntegrationFramework';
+export * from './identity/AgentIdentityService';
+export * from './browser/AutonomousBrowserService';
+export * from './accounts/ExternalAccountService';
+export * from './discovery/AIDiscoveryService';
+export * from './dialogue/AgentDialogueService';
